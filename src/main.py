@@ -1,18 +1,25 @@
-#def calc_avg(my_list):
- #   if len(my_list) > 0:
-#      return sum(my_list) / len(my_list)
-#   return 0
+from src.utils import analyze_data
+from src.utils import (
+    parse_date,
+    filter_data,
+    import_data,
+    get_date_range,
+    calculate_totals,
+    group_expenses,
+    create_response,
+)
+import pandas as pd
 
 
-#if __name__ == '__main__':
-#    assert calc_avg([1, 2, 3, 4]) == 2.5
+# operations_path = os.path.join(DATA_DIR, 'operations.xlsx')
+# all_operations = pd.read_excel(...)
+# all_operations_list_dict = all_operations.to.dict(orient='records')
 #
-#    assert calc_avg([]) == 0
+# main_page_info_json = get...('data', all_operations)
+# print(main_page_info_json)
+#
+# service_info = get_best_cashback_categories(all_operations_list_dict, 2021,12)
+# print(service_info)
 
-def finder(my_list, my_type):
-    counter = 0
-    if isinstance(my_list, list):
-        for item in my_list:
-            if isinstance(item, my_type):
-                counter += 1
-    return counter
+
+
