@@ -1,42 +1,62 @@
 import pandas as pd
 import requests
-import json
+import logging
 from datetime import datetime, timedelta
-import os
-from config import file_path, file_path1
 
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_data_range(date_str, data_range='M'):
-    """Возвращает начальную и конечную даты для анализа."""
-    date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
-    if data_range == 'W':
-        start_date = date - timedelta(days=date.weekday())
-        end_date = date
-    elif data_range == 'M':
-        start_date = date.replace(day=1)
-        end_date = date
+def get_data_range(date_str, data_range):
+    # Преобразуйте входную строку на случай, если время отсутствует
+    if len(date_str) == 10:  # формат 'DD.MM.YYYY'
+        date_str += ' 00:00:00'
+        logging.debug(f"Преобразована строка даты: {date_str}")
+
+    # Теперь можно безопасно разбирать строку
+    parsed_date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
+    logging.debug(f"Разобранная дата: {parsed_date}")
+
+    if data_range == 'M':
+        start_date = parsed_date.replace(hour=0, minute=0, second=0)
+        end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(seconds=1)
+        end_date = end_date.replace(hour=23, minute=59, second=59)
+        logging.debug(f"Месячный период: {start_date} - {end_date}")
+
+    elif data_range == 'W':
+        start_date = parsed_date - timedelta(days=parsed_date.weekday())  # Понедельник
+        end_date = start_date + timedelta(days=6)  # Воскресенье
+        end_date = end_date.replace(hour=23, minute=59, second=59)
+        logging.debug(f"Недельный период: {start_date} - {end_date}")
+
     elif data_range == 'Y':
-        start_date = date.replace(month=1, day=1)
-        end_date = date
+        start_date = parsed_date.replace(month=1, day=1, hour=0, minute=0, second=0)
+        end_date = parsed_date.replace(month=12, day=31, hour=23, minute=59, second=59)
+        logging.debug(f"Годовой диапазон: {start_date} - {end_date}")
+
     elif data_range == 'ALL':
-        start_date = datetime(2021, 1, 1, 16,44, 00 )
-        end_date = date
+        # Логика для ALL
+        start_date = datetime(2021, 1, 1, 16, 44, 0)
+        end_date = parsed_date
+        logging.debug(f"Период даты и времени: {start_date} - {end_date}")
+
     else:
-        raise ValueError("Некорректный диапазон данных.")
+        logging.error("Недопустимый период")
+        raise ValueError("Invalid period")
 
     return start_date, end_date
-
 
 def get_currency_rates(currencies):
     rates = {}
     for currency in currencies:
+        logging.debug(f"Запрос курсов для валюты: {currency}")
         try:
-            response = requests.get(f'https://api.exchangerate-api.com/v4/latest/{currency}')
-            response.raise_for_status()  # Эта строка проверяет ошибки HTTP
+            response = requests.get(f'https://v6.exchangerate-api.com/v6/ed5608baba940bd1aa75173b/latest/USD {currency}')
+            response.raise_for_status()
             rates[currency] = response.json().get('rates', {})
+            logging.info(f"Успешно получены курсы для {currency}: {rates[currency]}")
         except requests.RequestException as e:
-            print(f"Ошибка при получении курса валюты {currency}: {e}")
-            rates[currency] = {}  # Или можете задуматься о других fallback значениях
+            logging.error(f"Ошибка при получении курса для {currency}: {e}")
+            rates[currency] = {}
     return rates
 
 
@@ -44,13 +64,20 @@ def get_stock_prices(stocks):
     """Получает цены акций."""
     prices = {}
     for stock in stocks:
-        response = requests.get(f'https://api.marketstack.com/v1{stock}')
-        prices[stock] = response.json().get('price', None)
+        logging.debug(f"Запрос цены для акции: {stock}")
+        try:
+            response = requests.get(f'https://api.marketstack.com/v1/eod?access_key=df3caee3a4eb8c55e2af01775ca399c8&symbols=AAPL {stock}')
+            response.raise_for_status()  # Проверка на ошибки HTTP
+            prices[stock] = response.json().get('price', None)
+            logging.info(f"Успешно получена цена для {stock}: {prices[stock]}")
+        except requests.RequestException as e:
+            logging.error(f"Ошибка при получении цены для {stock}: {e}")
+            prices[stock] = None
     return prices
-
 
 def group_expenses(filtered_data):
     """Группирует расходы по категориям и возвращает основные категории."""
+    logging.debug("Начало группировки расходов")
     expenses_by_category = (
         filtered_data[filtered_data['Сумма операции'] < 0]
         .groupby('Категория')['Сумма операции']
@@ -58,7 +85,6 @@ def group_expenses(filtered_data):
         .reset_index()
     )
     expenses_by_category['Сумма операции'] = expenses_by_category['Сумма операции'].round(0)
-
     top_expenses = expenses_by_category.nlargest(7, 'Сумма операции')
     other_expenses_sum = expenses_by_category.loc[
         ~expenses_by_category['Категория'].isin(top_expenses['Категория']),
@@ -68,10 +94,12 @@ def group_expenses(filtered_data):
     other_expenses = pd.DataFrame({'Категория': ['Остальное'], 'Сумма операции': [other_expenses_sum]})
     combined_expenses = pd.concat([top_expenses, other_expenses], ignore_index=True)
 
+    logging.info("Группировка расходов завершена")
     return combined_expenses
 
 def group_income(filtered_data):
     """Группирует поступления по категориям и возвращает основные категории."""
+    logging.debug("Начало группировки поступлений")
     income_by_category = (
         filtered_data[filtered_data['Сумма операции'] > 0]
         .groupby('Категория')['Сумма операции']
@@ -87,53 +115,9 @@ def group_income(filtered_data):
     other_income = pd.DataFrame({'Категория': ['Остальное'], 'Сумма операции': [other_income_sum]})
     combined_income = pd.concat([top_income, other_income], ignore_index=True)
 
+    logging.info("Группировка поступлений завершена")
     return combined_income
 
-def analyze_data(date_str, data_range='M'):
-    """Основная функция для анализа данных."""
-    start_date, end_date = get_data_range(date_str, data_range)
-    filtered_data = pd.read_excel(file_path)
-    filtered_data['Дата операции'] = filtered_data['Дата операции'].astype(str).str.strip()
-
-    try:
-        # Преобразуйте 'Дата операции' в формат даты и времени
-        filtered_data['Дата операции'] = pd.to_datetime(filtered_data['Дата операции'], format='%d.%m.%Y %H:%M:%S')
-    except Exception as e:
-        print(f"Ошибка при преобразовании дат: {e}")
-
-    # Фильтрация данных по дате
-    filtered_data = filtered_data[(filtered_data['Дата операции'] >= start_date) & (filtered_data['Дата операции'] <= end_date)]
-    # Анализ расходов
-    expenses_summary = group_expenses(filtered_data)
-    total_expenses = filtered_data['Сумма операции'].sum()
-    # Анализ поступлений
-    income_summary = group_income(filtered_data)
-    total_income = filtered_data['Сумма операции'][filtered_data['Сумма операции'] > 0].sum()
-    # Получение валютных курсов и цен акций
-    try:
-        with open(file_path1) as f:
-            user_settings = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        raise ValueError(f"Ошибка при чтении файла настроек пользователя: {e}")
-
-    currency_rates = get_currency_rates(user_settings['user_currencies'])
-    stock_prices = get_stock_prices(user_settings['user_stocks'])
-    # Формирование итогового ответа
-    result = {
-        "Расходы": {
-            "Общая сумма": total_expenses,
-            "Основные": expenses_summary.to_dict(orient='records')
-        },
-        "Поступления": {
-            "Общая сумма": total_income,
-            "Основные": income_summary.to_dict(orient='records')  # Предполагается, что вы реализовали эту функцию
-        },
-        "Курс валют": currency_rates,
-        "Цены акций": stock_prices
-    }
-    return result
 
 
-# Пример вызова функции
-result = analyze_data(date_str='31.12.2021 16:44:00', data_range='M')
-print(json.dumps(result, ensure_ascii=False, indent=4))
+

@@ -1,6 +1,6 @@
 import os
 from logging import FileHandler
-
+from pathlib import Path
 import pandas as pd
 
 ROOT_DIR = os.path.dirname(__file__)
@@ -19,4 +19,10 @@ filtered_data = pd.read_excel(file_path)
 operations_path = os.path.join(DATA_DIR, 'operations.xlsx')
 pd.read_excel(operations_path)
 
-#FileHandler(os.path(LOGS_DIR, 'view.log')) - ПРИМЕР ПУТИ К ЛОГАМ
+
+BASE_DIR = Path(__file__).resolve().parent
+
+EXCEL_PATH = BASE_DIR.joinpath('data/my_operations.xlsx')
+JSON_PATH = BASE_DIR.joinpath('user_settings.json')
+LOG_PATH = BASE_DIR.joinpath('logs/app.log')
+REPORTS_PATH = BASE_DIR.joinpath('reports.json')
